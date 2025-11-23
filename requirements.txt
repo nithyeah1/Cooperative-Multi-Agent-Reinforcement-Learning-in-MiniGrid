@@ -1,0 +1,12 @@
+# Multi-Agent RL Dependencies
+
+stable-baselines3[extra]
+pettingzoo
+supersuit
+minigrid
+torch
+torchvision
+gymnasium
+tensorboard
+numpy
+matplotlib
