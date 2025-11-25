@@ -78,13 +78,15 @@ class MultiAgentGoalReachingEnv(ParallelEnv):
         num_agents=2,
         max_steps=100,
         shared_reward=True,
-        render_mode=None
+        render_mode=None,
+        reward_shaping=True
     ):
         self.grid_size = grid_size
         self._num_agents = num_agents
         self.max_steps = max_steps
         self.shared_reward = shared_reward
         self.render_mode = render_mode
+        self.reward_shaping = reward_shaping
 
         # Agent setup
         self.possible_agents = [f"agent_{i}" for i in range(num_agents)]
@@ -112,6 +114,7 @@ class MultiAgentGoalReachingEnv(ParallelEnv):
         self.goals = {}
         self.goals_reached = {}
         self.step_count = 0
+        self.prev_distances = {}  # Track previous distances for reward shaping
 
     @property
     def num_agents(self):
@@ -180,10 +183,18 @@ class MultiAgentGoalReachingEnv(ParallelEnv):
                     self.grid.set(x, y, goal)
                     break
         
+        # Initialize distances for reward shaping
+        for agent_name in self.agents:
+            agent_pos = self.agents_dict[agent_name].pos
+            goal_pos = self.goals[agent_name]
+            self.prev_distances[agent_name] = np.linalg.norm(
+                np.array(agent_pos) - np.array(goal_pos)
+            )
+
         # Get initial observations
         observations = {agent: self._get_obs(agent) for agent in self.agents}
         infos = {agent: {} for agent in self.agents}
-        
+
         return observations, infos
     
     def step(self, actions):
@@ -205,15 +216,30 @@ class MultiAgentGoalReachingEnv(ParallelEnv):
         for agent_name in self.agents:
             agent = self.agents_dict[agent_name]
             goal_pos = self.goals[agent_name]
-            
+
             # Check if agent reached its goal
             if agent.pos == goal_pos:
                 self.goals_reached[agent_name] = True
                 rewards[agent_name] = 1.0
             else:
-                # Small negative reward for time
+                # Base time penalty
                 rewards[agent_name] = -0.01
-            
+
+                # Add reward shaping based on distance to goal
+                if self.reward_shaping:
+                    current_dist = np.linalg.norm(
+                        np.array(agent.pos) - np.array(goal_pos)
+                    )
+                    prev_dist = self.prev_distances[agent_name]
+
+                    # Reward for getting closer, penalty for moving away
+                    # Using 0.1 as baseline (0.3 caused reward hacking)
+                    distance_reward = 0.1 * (prev_dist - current_dist)
+                    rewards[agent_name] += distance_reward
+
+                    # Update previous distance
+                    self.prev_distances[agent_name] = current_dist
+
             observations[agent_name] = self._get_obs(agent_name)
             terminations[agent_name] = self.goals_reached[agent_name]
             truncations[agent_name] = self.step_count >= self.max_steps

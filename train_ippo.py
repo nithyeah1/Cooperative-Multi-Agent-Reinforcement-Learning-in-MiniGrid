@@ -1,17 +1,58 @@
 """
 Working IPPO Training Script for Multi-Agent MiniGrid
 Simplified version that actually works with the custom environment
+IMPROVED VERSION with custom CNN for small grids
 """
 
 import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 import torch
+import torch.nn as nn
 import gymnasium as gym
 from gymnasium import spaces
 
 from multiagent_minigrid_env import MultiAgentGoalReachingEnv
+
+
+class SmallGridCNN(BaseFeaturesExtractor):
+    """
+    Custom CNN feature extractor for small grids (6x6)
+    The default CnnPolicy expects 8x8 minimum, so we need a custom one
+    """
+
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 128):
+        super().__init__(observation_space, features_dim)
+
+        n_input_channels = observation_space.shape[2]  # RGB = 3 channels
+
+        # Simple CNN that works with 6x6 images
+        self.cnn = nn.Sequential(
+            nn.Conv2d(n_input_channels, 16, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Flatten(),
+        )
+
+        # Compute shape by doing one forward pass
+        with torch.no_grad():
+            sample = torch.as_tensor(observation_space.sample()[None]).float()
+            # Transpose to channels-first (NCHW) format for PyTorch
+            sample = sample.permute(0, 3, 1, 2)
+            n_flatten = self.cnn(sample).shape[1]
+
+        self.linear = nn.Sequential(
+            nn.Linear(n_flatten, features_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, observations: torch.Tensor) -> torch.Tensor:
+        # Convert from (N, H, W, C) to (N, C, H, W) for PyTorch
+        observations = observations.permute(0, 3, 1, 2)
+        return self.linear(self.cnn(observations))
 
 
 class SingleAgentWrapper(gym.Env):
@@ -82,14 +123,15 @@ class SingleAgentWrapper(gym.Env):
         self.env.close()
 
 
-def make_env(agent_id, grid_size=8, max_steps=100):
+def make_env(agent_id, grid_size=8, max_steps=100, reward_shaping=True):
     """Factory function to create wrapped environment"""
     def _init():
         base_env = MultiAgentGoalReachingEnv(
             grid_size=grid_size,
             num_agents=2,
             max_steps=max_steps,
-            shared_reward=True
+            shared_reward=True,
+            reward_shaping=reward_shaping
         )
         return SingleAgentWrapper(base_env, agent_id)
     return _init
@@ -97,35 +139,49 @@ def make_env(agent_id, grid_size=8, max_steps=100):
 
 def train_ippo(
     num_agents=2,
-    total_timesteps=500_000,
-    grid_size=8,
-    max_steps=100,
-    save_freq=50_000
+    total_timesteps=1_000_000,
+    grid_size=6,
+    max_steps=150,
+    save_freq=50_000,
+    reward_shaping=True
 ):
     """
     Train IPPO: Independent PPO for each agent
+    IMPROVED VERSION with CnnPolicy and better hyperparameters
     """
-    
+
     models = {}
-    
+
     print("="*60)
-    print("IPPO Training: Independent PPO for Multi-Agent MiniGrid")
+    print("IMPROVED IPPO Training")
     print("="*60)
-    
+    print(f"Grid Size: {grid_size}x{grid_size}")
+    print(f"Max Steps: {max_steps}")
+    print(f"Total Timesteps: {total_timesteps:,}")
+    print(f"Reward Shaping: {reward_shaping}")
+    print(f"Policy: CnnPolicy (optimized for image observations)")
+    print("="*60)
+
     # Train each agent independently
     for agent_id in range(num_agents):
         print(f"\n{'='*60}")
         print(f"Training Agent {agent_id}")
         print(f"{'='*60}\n")
-        
+
         # Create environment for this agent
-        env = DummyVecEnv([make_env(agent_id, grid_size, max_steps)])
-        
-        # Create PPO model
-        # Using MlpPolicy since we're flattening the grid observations
+        env = DummyVecEnv([make_env(agent_id, grid_size, max_steps, reward_shaping)])
+
+        # Create PPO model with custom CNN for small grids
+        # Using custom SmallGridCNN that works with 6x6 observations
+        policy_kwargs = dict(
+            features_extractor_class=SmallGridCNN,
+            features_extractor_kwargs=dict(features_dim=128),
+        )
+
         model = PPO(
-            "MlpPolicy",
+            "CnnPolicy",  # Use CnnPolicy with our custom feature extractor
             env,
+            policy_kwargs=policy_kwargs,
             learning_rate=3e-4,
             n_steps=2048,
             batch_size=64,
@@ -133,18 +189,18 @@ def train_ippo(
             gamma=0.99,
             gae_lambda=0.95,
             clip_range=0.2,
-            ent_coef=0.01,
+            ent_coef=0.02,  # INCREASED: More exploration
             vf_coef=0.5,
             max_grad_norm=0.5,
             verbose=1,
-            tensorboard_log=f"./tensorboard/ippo/agent_{agent_id}/",
+            tensorboard_log=f"./tensorboard/ippo_baseline/agent_{agent_id}/",
             device='cuda' if torch.cuda.is_available() else 'cpu'
         )
         
         # Setup checkpoint callback
         checkpoint_callback = CheckpointCallback(
             save_freq=save_freq,
-            save_path=f"./checkpoints/ippo/agent_{agent_id}/",
+            save_path=f"./checkpoints/ippo_baseline/agent_{agent_id}/",
             name_prefix="model",
             save_replay_buffer=False,
             save_vecnormalize=True,
@@ -158,32 +214,33 @@ def train_ippo(
             log_interval=10
         )
         
-        # Save final model
-        model.save(f"ippo_agent_{agent_id}_final")
+        # Save final model as baseline
+        model.save(f"ippo_baseline_agent_{agent_id}_final")
         models[agent_id] = model
-        
+
         print(f"\nAgent {agent_id} training complete!")
-        print(f"Model saved as: ippo_agent_{agent_id}_final.zip")
+        print(f"Model saved as: ippo_baseline_agent_{agent_id}_final.zip")
         
         env.close()
     
     return models
 
 
-def evaluate_ippo(models, n_episodes=20, grid_size=8, max_steps=100, render=False):
+def evaluate_ippo(models, n_episodes=20, grid_size=6, max_steps=150, render=False, reward_shaping=True):
     """
     Evaluate trained IPPO agents together in the environment
     """
-    
+
     print("\n" + "="*60)
     print("Evaluating IPPO Agents")
     print("="*60 + "\n")
-    
+
     env = MultiAgentGoalReachingEnv(
         grid_size=grid_size,
         num_agents=len(models),
         max_steps=max_steps,
-        shared_reward=True
+        shared_reward=True,
+        reward_shaping=reward_shaping
     )
     
     episode_rewards = []
@@ -260,60 +317,72 @@ def evaluate_ippo(models, n_episodes=20, grid_size=8, max_steps=100, render=Fals
     }
 
 
-def load_and_evaluate(n_episodes=20):
+def load_and_evaluate(n_episodes=20, improved=True):
     """Load saved models and evaluate them"""
-    
+
     print("Loading saved IPPO models...")
-    
+
     models = {}
+    prefix = "ippo_improved" if improved else "ippo"
+
     for agent_id in range(2):
         try:
-            model = PPO.load(f"ippo_agent_{agent_id}_final")
+            model = PPO.load(f"{prefix}_agent_{agent_id}_final")
             models[agent_id] = model
-            print(f"  ✓ Loaded agent_{agent_id}")
+            print(f"  ✓ Loaded {prefix}_agent_{agent_id}")
         except FileNotFoundError:
             print(f"  ✗ Could not find model for agent_{agent_id}")
             return None
-    
+
     return evaluate_ippo(models, n_episodes=n_episodes)
 
 
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description='Train or evaluate IPPO agents')
+    parser = argparse.ArgumentParser(description='Train or evaluate IPPO agents (IMPROVED VERSION)')
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'eval'],
                         help='Mode: train or eval')
-    parser.add_argument('--timesteps', type=int, default=500_000,
-                        help='Total timesteps for training')
+    parser.add_argument('--timesteps', type=int, default=1_000_000,
+                        help='Total timesteps for training (default: 1M)')
     parser.add_argument('--episodes', type=int, default=20,
                         help='Number of episodes for evaluation')
-    parser.add_argument('--grid-size', type=int, default=8,
-                        help='Size of the grid')
-    parser.add_argument('--max-steps', type=int, default=100,
-                        help='Maximum steps per episode')
+    parser.add_argument('--grid-size', type=int, default=6,
+                        help='Size of the grid (default: 6x6 - easier than 8x8)')
+    parser.add_argument('--max-steps', type=int, default=150,
+                        help='Maximum steps per episode (default: 150)')
+    parser.add_argument('--no-reward-shaping', action='store_true',
+                        help='Disable reward shaping (distance-based rewards)')
     
     args = parser.parse_args()
     
+    reward_shaping = not args.no_reward_shaping
+
     if args.mode == 'train':
         # Train IPPO
         models = train_ippo(
             num_agents=2,
             total_timesteps=args.timesteps,
             grid_size=args.grid_size,
-            max_steps=args.max_steps
+            max_steps=args.max_steps,
+            reward_shaping=reward_shaping
         )
-        
+
         # Evaluate trained models
         print("\n" + "="*60)
         print("Training Complete! Running evaluation...")
         print("="*60)
-        results = evaluate_ippo(models, n_episodes=args.episodes, 
-                               grid_size=args.grid_size, max_steps=args.max_steps)
-        
+        results = evaluate_ippo(
+            models,
+            n_episodes=args.episodes,
+            grid_size=args.grid_size,
+            max_steps=args.max_steps,
+            reward_shaping=reward_shaping
+        )
+
     else:  # eval mode
         # Load and evaluate existing models
         results = load_and_evaluate(n_episodes=args.episodes)
-        
+
         if results is None:
             print("\nNo saved models found. Please train first with --mode train")
