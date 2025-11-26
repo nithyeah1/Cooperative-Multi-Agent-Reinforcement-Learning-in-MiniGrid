@@ -63,7 +63,7 @@ class MAPPOActorCritic(nn.Module):
 # =====================================
 class MAPPOTrainer:
     def __init__(self, grid_size=8, n_agents=2, total_steps=500_000, rollout_len=2048):
-        self.env = MultiAgentGoalReachingEnv(grid_size=grid_size, num_agents=n_agents, shared_reward=True)
+        self.env = MultiAgentGoalReachingEnv(grid_size=grid_size, num_agents=n_agents, shared_reward=True, reward_shaping=True)
         obs_dim = np.prod(self.env.observation_space('agent_0').shape)
         act_dim = self.env.action_space('agent_0').n
 
@@ -91,10 +91,12 @@ class MAPPOTrainer:
         storage = []
         for _ in range(self.rollout_len):
             actions, log_probs = {}, {}
+            individual_obs = []  # Store individual observations
             joint_obs = torch.cat([obs[f'agent_{i}'] for i in range(self.n_agents)])
 
             for i in range(self.n_agents):
                 agent_obs = obs[f'agent_{i}']
+                individual_obs.append(agent_obs)
                 action, log_prob, _ = self.model.act(agent_obs)
                 actions[f'agent_{i}'] = action.item()
                 log_probs[f'agent_{i}'] = log_prob
@@ -104,7 +106,8 @@ class MAPPOTrainer:
             # ✅ Reward shaping (encourages moving toward goal)
             rewards = sum(list(reward.values()))  # team reward
 
-            storage.append((joint_obs, torch.tensor(rewards, dtype=torch.float32), log_probs, actions))
+            # Store: joint_obs for critic, individual_obs for actors, rewards, log_probs, actions
+            storage.append((joint_obs, individual_obs, torch.tensor(rewards, dtype=torch.float32), log_probs, actions))
 
             obs = {k: torch.tensor(v.flatten(), dtype=torch.float32) for k, v in next_obs.items()}
             if all(done.values()) or all(trunc.values()):
@@ -140,12 +143,12 @@ class MAPPOTrainer:
         for update in range(total_updates):
             # === Collect Rollout ===
             rollout = self.collect_rollout()
-            obs_batch = torch.stack([r[0] for r in rollout])
-            rewards = torch.stack([r[1] for r in rollout])
+            joint_obs_batch = torch.stack([r[0] for r in rollout])  # For critic
+            rewards = torch.stack([r[2] for r in rollout])  # Rewards are now at index 2
 
             # === Compute Critic Values ===
             with torch.no_grad():
-                values = self.model.critic(obs_batch).squeeze()
+                values = self.model.critic(joint_obs_batch).squeeze()
 
             # === GAE and Returns ===
             next_value = torch.tensor(0.0)
@@ -158,14 +161,15 @@ class MAPPOTrainer:
 
             # === PPO Update ===
             for epoch in range(4):  # multiple PPO epochs
-                new_values = self.model.critic(obs_batch).squeeze()
+                new_values = self.model.critic(joint_obs_batch).squeeze()
                 log_probs_all, entropy_all = [], []
 
-                # Log probs for each agent
+                # Log probs for each agent using INDIVIDUAL observations
                 for i in range(self.n_agents):
-                    agent_obs = obs_batch[:, i * obs_batch.shape[1] // self.n_agents:(i + 1) * obs_batch.shape[1] // self.n_agents]
-                    actions = torch.tensor([r[3][f'agent_{i}'] for r in rollout])
-                    log_p, ent = self.model.evaluate_actions(agent_obs, actions)
+                    # Extract individual agent observations from storage
+                    agent_obs_batch = torch.stack([r[1][i] for r in rollout])  # r[1] contains individual_obs
+                    actions = torch.tensor([r[4][f'agent_{i}'] for r in rollout])  # r[4] contains actions
+                    log_p, ent = self.model.evaluate_actions(agent_obs_batch, actions)
                     log_probs_all.append(log_p)
                     entropy_all.append(ent)
 
@@ -173,7 +177,7 @@ class MAPPOTrainer:
                 entropy = torch.stack(entropy_all).mean()
 
                 old_log_probs = torch.stack([
-                    torch.stack(list(r[2].values())).mean()
+                    torch.stack(list(r[3].values())).mean()  # r[3] contains old log_probs
                     for r in rollout
                 ]).detach()
 
@@ -232,7 +236,8 @@ class MAPPOTrainer:
             grid_size=grid_size,
             num_agents=self.n_agents,
             max_steps=max_steps,
-            shared_reward=True
+            shared_reward=True,
+            reward_shaping=True
         )
 
         episode_rewards, episode_lengths = [], []
