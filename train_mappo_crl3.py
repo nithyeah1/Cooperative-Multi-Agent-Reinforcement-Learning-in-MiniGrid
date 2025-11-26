@@ -77,9 +77,9 @@ class MAPPOTrainer:
         self.gae_lambda = 0.95
         self.clip_param = 0.2
 
-        os.makedirs("./checkpoints/mappo/fixed/", exist_ok=True)
-        os.makedirs("./tensorboard/mappo/fixed/", exist_ok=True)
-        self.writer = SummaryWriter("./tensorboard/mappo/fixed/")
+        os.makedirs("./checkpoints/mappo/mappo_3_b/", exist_ok=True)
+        os.makedirs("./tensorboard/mappo/mappo_3_b/", exist_ok=True)
+        self.writer = SummaryWriter("./tensorboard/mappo/mappo_3_b/")
 
     # -------------------------------
     # Collect rollouts (joint obs)
@@ -326,6 +326,6 @@ if __name__ == "__main__":
         trainer.evaluate(n_episodes=args.episodes, grid_size=args.grid_size, max_steps=args.max_steps)
     else:
         print("\nLoading model and evaluating...")
-        model_path = "./checkpoints/mappo/fixed/mappo_update_240.pt"
+        model_path = "./checkpoints/mappo/mappo_3_b/mappo_update_240.pt"
         trainer.model.load_state_dict(torch.load(model_path, map_location='cpu'))
         trainer.evaluate(n_episodes=args.episodes, grid_size=args.grid_size, max_steps=args.max_steps, render=False)

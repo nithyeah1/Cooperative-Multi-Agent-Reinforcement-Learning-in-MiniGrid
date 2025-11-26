@@ -6,7 +6,7 @@ from train_mappo_crl3 import MAPPOActorCritic
 from multiagent_minigrid_env import MultiAgentGoalReachingEnv
 
 
-def visualize_mappo(model_path='./checkpoints/mappo/mappo_2/mappo_update_240.pt', grid_size=8, max_steps=100, delay=0.3):
+def visualize_mappo(model_path='./checkpoints/mappo/mappo_3_b/mappo_update_240.pt', grid_size=8, max_steps=100, delay=0.3):
     """Visualize trained MAPPO agents in MultiAgent MiniGrid"""
 
     env = MultiAgentGoalReachingEnv(grid_size=grid_size, num_agents=2, max_steps=max_steps, shared_reward=True)
@@ -101,7 +101,7 @@ def visualize_mappo(model_path='./checkpoints/mappo/mappo_2/mappo_update_240.pt'
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Visualize trained MAPPO agents')
-    parser.add_argument('--model', type=str, default='./checkpoints/mappo/mappo_3/mappo_update_240.pt', help='Path to trained MAPPO model')
+    parser.add_argument('--model', type=str, default='./checkpoints/mappo/mappo_3_b/mappo_update_240.pt', help='Path to trained MAPPO model')
     parser.add_argument('--grid-size', type=int, default=8, help='Grid size')
     parser.add_argument('--max-steps', type=int, default=100, help='Max steps per episode')
     parser.add_argument('--delay', type=float, default=0.3, help='Delay between frames')
