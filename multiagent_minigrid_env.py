@@ -78,23 +78,37 @@ class MultiAgentGoalReachingEnv(ParallelEnv):
         num_agents=2,
         max_steps=100,
         shared_reward=True,
-        render_mode=None
+        render_mode=None,
+        reward_shaping=True
     ):
-        self.grid_size = grid_size
-        self._num_agents = num_agents
-        self.max_steps = max_steps
-        self.shared_reward = shared_reward
-        self.render_mode = render_mode
+        # Handle RLlib's EnvContext (config dict) or direct parameters
+        if isinstance(grid_size, dict):
+            # RLlib passes config as a dict
+            config = grid_size
+            self.grid_size = config.get("grid_size", 10)
+            self._num_agents = config.get("num_agents", 2)
+            self.max_steps = config.get("max_steps", 100)
+            self.shared_reward = config.get("shared_reward", True)
+            self.render_mode = config.get("render_mode", None)
+            self.reward_shaping = config.get("reward_shaping", True)
+        else:
+            # Direct parameter passing
+            self.grid_size = grid_size
+            self._num_agents = num_agents
+            self.max_steps = max_steps
+            self.shared_reward = shared_reward
+            self.render_mode = render_mode
+            self.reward_shaping = reward_shaping
 
         # Agent setup
-        self.possible_agents = [f"agent_{i}" for i in range(num_agents)]
+        self.possible_agents = [f"agent_{i}" for i in range(self._num_agents)]
 
         super().__init__()
         self.agent_name_mapping = {name: i for i, name in enumerate(self.possible_agents)}
-        
+
         # Define observation and action spaces
         # Using simple grid observations (can modify to partial observability)
-        obs_shape = (grid_size, grid_size, 3)
+        obs_shape = (self.grid_size, self.grid_size, 3)
         
         self._observation_spaces = {
             agent: spaces.Box(low=0, high=255, shape=obs_shape, dtype=np.uint8)
@@ -112,6 +126,7 @@ class MultiAgentGoalReachingEnv(ParallelEnv):
         self.goals = {}
         self.goals_reached = {}
         self.step_count = 0
+        self.prev_distances = {}  # Track previous distances for reward shaping
 
     @property
     def num_agents(self):
@@ -179,7 +194,15 @@ class MultiAgentGoalReachingEnv(ParallelEnv):
                     self.goals[agent_name] = (x, y)
                     self.grid.set(x, y, goal)
                     break
-        
+
+        # Initialize distances for reward shaping
+        for agent_name in self.agents:
+            agent_pos = self.agents_dict[agent_name].pos
+            goal_pos = self.goals[agent_name]
+            self.prev_distances[agent_name] = np.linalg.norm(
+                np.array(agent_pos) - np.array(goal_pos)
+            )
+
         # Get initial observations
         observations = {agent: self._get_obs(agent) for agent in self.agents}
         infos = {agent: {} for agent in self.agents}
@@ -211,8 +234,23 @@ class MultiAgentGoalReachingEnv(ParallelEnv):
                 self.goals_reached[agent_name] = True
                 rewards[agent_name] = 1.0
             else:
-                # Small negative reward for time
+                # Base time penalty
                 rewards[agent_name] = -0.01
+
+                # Add reward shaping based on distance to goal
+                if self.reward_shaping:
+                    current_dist = np.linalg.norm(
+                        np.array(agent.pos) - np.array(goal_pos)
+                    )
+                    prev_dist = self.prev_distances[agent_name]
+
+                    # Reward for getting closer, penalty for moving away
+                    # Using 0.1 as baseline (0.3 caused reward hacking)
+                    distance_reward = 0.1 * (prev_dist - current_dist)
+                    rewards[agent_name] += distance_reward
+
+                    # Update previous distance
+                    self.prev_distances[agent_name] = current_dist
             
             observations[agent_name] = self._get_obs(agent_name)
             terminations[agent_name] = self.goals_reached[agent_name]
