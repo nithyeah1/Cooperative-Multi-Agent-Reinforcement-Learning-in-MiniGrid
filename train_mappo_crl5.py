@@ -10,7 +10,7 @@ import torch.optim as optim
 import numpy as np
 from torch.distributions import Categorical
 from torch.utils.tensorboard import SummaryWriter
-from multiagent_minigrid_env import MultiAgentGoalReachingEnv
+from multiagent_minigrid_env_safety_2b import MultiAgentGoalReachingEnv
 
 
 # =====================================
@@ -279,7 +279,7 @@ def train_mappo(
     grid_size=8,
     max_steps=100,
     n_agents=2,
-    reward_shaping=True,
+    reward_shaping=False,
     device='cpu'
 ):
     """Train MAPPO agents"""
@@ -290,7 +290,16 @@ def train_mappo(
         num_agents=n_agents,
         max_steps=max_steps,
         shared_reward=True,
-        reward_shaping=reward_shaping
+        reward_shaping=reward_shaping,
+        #modified to include safety configuration - lagrangian method    
+        safety_cfg= {
+             "enabled": True,
+            "n_hazards": 6,
+            # "hazard_cost": 1.0, #fixed penalty during evaluation
+            "use_lagrangian": True,
+            "lambda_coeff": 2.0,
+            "safety_budget": 3.0,
+        }
     )
 
     obs_dim = np.prod(env.observation_space('agent_0').shape)
@@ -305,9 +314,9 @@ def train_mappo(
     )
 
     # Setup logging
-    os.makedirs("./checkpoints/mappo/crl5/", exist_ok=True)
-    os.makedirs("./tensorboard/mappo/crl5/", exist_ok=True)
-    writer = SummaryWriter("./tensorboard/mappo/crl5/")
+    os.makedirs("./checkpoints/mappo/crl5/a1/", exist_ok=True)
+    os.makedirs("./tensorboard/mappo/crl5/a1/", exist_ok=True)
+    writer = SummaryWriter("./tensorboard/mappo/crl5/a1/")
 
     print("=" * 60)
     print("MAPPO Training - Clean Implementation")
@@ -401,7 +410,7 @@ def train_mappo(
                 'critic': mappo.critic.state_dict(),
                 'timesteps': timesteps
             }
-            torch.save(checkpoint, f"./checkpoints/mappo/crl5/checkpoint_{timesteps}.pt")
+            torch.save(checkpoint, f"./checkpoints/mappo/crl5/a1/checkpoint_{timesteps}.pt")
             print(f"  💾 Checkpoint saved at {timesteps} timesteps")
 
     # Save final model
@@ -410,7 +419,7 @@ def train_mappo(
         'critic': mappo.critic.state_dict(),
         'timesteps': timesteps
     }
-    torch.save(final_checkpoint, "./checkpoints/mappo/crl5/final_model.pt")
+    torch.save(final_checkpoint, "./checkpoints/mappo/crl5/a1/final_model.pt")
 
     writer.close()
     env.close()
@@ -438,7 +447,17 @@ def evaluate_mappo(checkpoint_path, n_episodes=20, grid_size=8, max_steps=100, r
         num_agents=2,
         max_steps=max_steps,
         shared_reward=True,
-        reward_shaping=True
+        reward_shaping=True,
+        #modified to include safety configuration - lagrangian method    
+        safety_cfg= {
+             "enabled": True,
+            "n_hazards": 6,
+            # "hazard_cost": 1.0, #fixed penalty during evaluation
+            "use_lagrangian": True,
+            "lambda_coeff": 2.0,
+            "safety_budget": 3.0,
+        }
+
     )
 
     obs_dim = np.prod(env.observation_space('agent_0').shape)
@@ -507,7 +526,7 @@ def evaluate_mappo(checkpoint_path, n_episodes=20, grid_size=8, max_steps=100, r
 
 # =====================================
 # Main
-# =====================================
+# ===================================== 
 if __name__ == "__main__":
     import argparse
 
@@ -515,13 +534,13 @@ if __name__ == "__main__":
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'eval'])
     parser.add_argument('--timesteps', type=int, default=500_000)
     parser.add_argument('--episodes', type=int, default=20)
-    parser.add_argument('--checkpoint', type=str, default='./checkpoints/mappo/crl5/final_model.pt')
+    parser.add_argument('--checkpoint', type=str, default='./checkpoints/mappo/crl5/a1/final_model.pt')
 
     args = parser.parse_args()
 
     if args.mode == 'train':
         mappo = train_mappo(total_timesteps=args.timesteps)
         print("\nRunning evaluation...")
-        evaluate_mappo('./checkpoints/mappo/crl5/final_model.pt', n_episodes=args.episodes)
+        evaluate_mappo('./checkpoints/mappo/crl5/a1/final_model.pt', n_episodes=args.episodes)
     else:
         evaluate_mappo(args.checkpoint, n_episodes=args.episodes)
