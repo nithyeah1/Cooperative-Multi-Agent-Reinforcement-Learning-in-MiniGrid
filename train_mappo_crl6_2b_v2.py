@@ -148,6 +148,7 @@ class MAPPO_Lagrangian:
         safety_budget=3.0,
         lambda_lr=0.02,
         lambda_init=0.0,
+        lambda_max=1.0,
     ):
         self.n_agents = n_agents
         self.gamma = gamma
@@ -155,6 +156,7 @@ class MAPPO_Lagrangian:
         self.clip_eps = clip_eps
         self.entropy_coef = entropy_coef
         self.value_coef = value_coef
+        self.lambda_max = lambda_max
         self.max_grad_norm = max_grad_norm
         self.ppo_epochs = ppo_epochs
         self.device = device
@@ -329,13 +331,13 @@ def train_lagrangian(
         num_agents=n_agents,
         max_steps=max_steps,
         shared_reward=True,
-        reward_shaping=False,
+        reward_shaping=True,  # ENABLED: helps agents learn paths
         safety_cfg={
             "enabled": True,
-            "n_hazards": 6,
+            "n_hazards": 4,  # REDUCED: from 6 to 4 for easier navigation
             "use_lagrangian": True,
             "lambda_coeff": 0.0,   # will be updated dynamically
-            "safety_budget": 3.0,
+            "safety_budget": 15.0,  # Balanced: between 12-25 cost range
         }
     )
 
@@ -347,9 +349,10 @@ def train_lagrangian(
         obs_dim=obs_dim,
         act_dim=act_dim,
         device=device,
-        safety_budget=3.0,
-        lambda_lr=0.02,
-        lambda_init=0.0
+        safety_budget=15.0,  # Balanced: matches env
+        lambda_lr=0.005,  # From papers: standard range (0.005-0.01)
+        lambda_init=0.0,
+        lambda_max=1.0  # Upper bound to prevent explosion
     )
 
     writer = SummaryWriter("./tensorboard/lagrangian/")
@@ -362,8 +365,12 @@ def train_lagrangian(
     episode_len = 0
     episode_idx = 0
     episode_rewards = []
+    rollout_costs = []  # Track costs within current rollout
 
     print("\n=========== TRAINING LAGRANGIAN MAPPO ===========\n")
+    print(f"Initial Lambda: {agent.lambda_coeff:.4f}")
+    print(f"Safety Budget: {agent.safety_budget:.1f}")
+    print("=" * 60)
 
     while timesteps < total_timesteps:
 
@@ -412,20 +419,12 @@ def train_lagrangian(
 
             # Handle episode termination
             if done:
-                avg_ep_cost = episode_cost / max(1, episode_len)
-
-                # Lagrangian dual update on lambda
-                agent.lambda_coeff = max(
-                    0.0,
-                    agent.lambda_coeff + agent.lambda_lr * (avg_ep_cost - agent.safety_budget)
-                )
-                # push lambda into env for reward shaping
-                env.lambda_coeff = agent.lambda_coeff
+                # Track costs for this rollout
+                rollout_costs.append(episode_cost)
+                episode_rewards.append(episode_reward)
 
                 # Logging
-                writer.add_scalar("Lagrangian/Lambda", agent.lambda_coeff, timesteps)
                 writer.add_scalar("Safety/EpisodeCost", episode_cost, timesteps)
-                writer.add_scalar("Safety/EpisodeAvgCost", avg_ep_cost, timesteps)
                 writer.add_scalar("Reward/EpisodeReward", episode_reward, timesteps)
                 writer.add_scalar("Reward/EpisodeLength", episode_len, timesteps)
 
@@ -444,15 +443,43 @@ def train_lagrangian(
         # PPO update at end of rollout
         stats = agent.update()
 
+        # Lambda update AFTER PPO update (key fix!)
+        # Use average cost from rollout
+        if len(rollout_costs) > 0:
+            avg_rollout_cost = np.mean(rollout_costs)
+            old_lambda = agent.lambda_coeff
+            violation = avg_rollout_cost - agent.safety_budget
 
-        print(f"Timesteps: {timesteps:7d} | "
+            # Standard dual ascent with clipping
+            agent.lambda_coeff = max(
+                0.0,
+                min(agent.lambda_max, agent.lambda_coeff + agent.lambda_lr * violation)
+            )
+
+            # Push updated lambda to environment for NEXT rollout
+            env.lambda_coeff = agent.lambda_coeff
+
+            # Clear rollout costs
+            rollout_costs = []
+
+            # Log lambda
+            writer.add_scalar("Lagrangian/Lambda", agent.lambda_coeff, timesteps)
+            writer.add_scalar("Safety/RolloutAvgCost", avg_rollout_cost, timesteps)
+
+        # Print progress logging
+        if len(episode_rewards) > 0:
+            avg_reward = np.mean(episode_rewards[-10:]) if len(episode_rewards) >= 10 else np.mean(episode_rewards)
+
+            print(f"Timesteps: {timesteps:7d} | "
                   f"Episodes: {episode_idx:4d} | "
-                #   f"Avg Reward: {avg_reward:7.2f} | "
+                  f"Avg Reward: {avg_reward:7.2f} | "
                   f"Lambda: {agent.lambda_coeff:6.4f} | "
+                  f"AvgCost: {avg_rollout_cost if len(rollout_costs) == 0 else 0:.2f} | "
                   f"Actor Loss: {stats['actor_loss']:7.4f} | "
                   f"Critic Loss: {stats['critic_loss']:7.4f} | "
                   f"Entropy: {stats['entropy']:6.3f}")
 
+            writer.add_scalar("Reward/Average", avg_reward, timesteps)
 
         writer.add_scalar("Loss/Actor", stats["actor_loss"], timesteps)
         writer.add_scalar("Loss/Critic", stats["critic_loss"], timesteps)
@@ -498,20 +525,20 @@ def evaluate_lagrangian(
     # Load checkpoint
     ckpt = torch.load(checkpoint_path, map_location=device)
 
-    # Create environment for evaluation
+    # Create environment for evaluation (match training settings)
     env = MultiAgentGoalReachingEnv(
         grid_size=grid_size,
         num_agents=2,
         max_steps=max_steps,
         shared_reward=True,
-        reward_shaping=False,
+        reward_shaping=True,  # MATCH TRAINING
         safety_cfg={
             "enabled": True,
-            "n_hazards": 6,
+            "n_hazards": 4,  # MATCH TRAINING
             # Evaluate under same Lagrangian shaping (can change if you want plain penalty)
             "use_lagrangian": True,
             "lambda_coeff": ckpt.get("lambda", 0.0),
-            "safety_budget": 3.0,
+            "safety_budget": 15.0,  # MATCH TRAINING
         }
     )
 

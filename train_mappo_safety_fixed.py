@@ -1,6 +1,6 @@
 """
-MAPPO Implementation - Clean & Working
-Built from scratch with proper centralized critic
+MAPPO with Fixed Safety Penalty - Baseline for Comparison
+Uses working crl5 architecture + safety environment with FIXED penalty (no Lagrangian)
 """
 
 import os
@@ -10,7 +10,7 @@ import torch.optim as optim
 import numpy as np
 from torch.distributions import Categorical
 from torch.utils.tensorboard import SummaryWriter
-from multiagent_minigrid_env import MultiAgentGoalReachingEnv
+from multiagent_minigrid_env_safety_2b_saflag import MultiAgentGoalReachingEnv
 
 
 # =====================================
@@ -284,17 +284,20 @@ def train_mappo(
 ):
     """Train MAPPO agents"""
 
-    # Create environment
+    # Create environment with FIXED safety penalty
     env = MultiAgentGoalReachingEnv(
         grid_size=grid_size,
         num_agents=n_agents,
         max_steps=max_steps,
         shared_reward=True,
-        reward_shaping=reward_shaping
-
-
-
-
+        reward_shaping=reward_shaping,
+        safety_cfg={
+            "enabled": True,
+            "n_hazards": 4,
+            "use_lagrangian": False,  # FIXED PENALTY - NO LAGRANGIAN
+            "hazard_cost": 0.3,  # Small fixed penalty (goal=1.0, so 0.3 is meaningful but not catastrophic)
+            "safety_budget": 15.0,
+        }
 
 
 
