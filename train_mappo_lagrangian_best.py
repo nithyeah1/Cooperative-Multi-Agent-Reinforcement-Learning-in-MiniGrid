@@ -350,9 +350,9 @@ def train_lagrangian(
         act_dim=act_dim,
         device=device,
         safety_budget=15.0,  # Balanced: matches env
-        lambda_lr=0.005,  # From papers: standard range (0.005-0.01)
+        lambda_lr=0.001,  # Small LR with normalization (from papers)
         lambda_init=0.0,
-        lambda_max=1.0  # Upper bound to prevent explosion
+        lambda_max=0.5  # Lower max - keeps penalty reasonable vs goal reward (1.0)
     )
 
     writer = SummaryWriter("./tensorboard/lagrangian/")
@@ -366,10 +366,14 @@ def train_lagrangian(
     episode_idx = 0
     episode_rewards = []
     rollout_costs = []  # Track costs within current rollout
+    cost_ema = 0.0  # EMA of costs for smooth lambda updates
+    update_counter = 0  # Count episodes for periodic lambda updates
 
-    print("\n=========== TRAINING LAGRANGIAN MAPPO ===========\n")
+    print("\n=========== TRAINING LAGRANGIAN MAPPO (BEST) ===========\n")
     print(f"Initial Lambda: {agent.lambda_coeff:.4f}")
+    print(f"Lambda Max: {agent.lambda_max:.2f}")
     print(f"Safety Budget: {agent.safety_budget:.1f}")
+    print(f"Lambda LR: {agent.lambda_lr:.4f}")
     print("=" * 60)
 
     while timesteps < total_timesteps:
@@ -443,28 +447,47 @@ def train_lagrangian(
         # PPO update at end of rollout
         stats = agent.update()
 
-        # Lambda update AFTER PPO update (key fix!)
-        # Use average cost from rollout
+        # Lambda update AFTER PPO update with EMA + normalization
+        # Combine best of both approaches
         if len(rollout_costs) > 0:
             avg_rollout_cost = np.mean(rollout_costs)
-            old_lambda = agent.lambda_coeff
-            violation = avg_rollout_cost - agent.safety_budget
 
-            # Standard dual ascent with clipping
-            agent.lambda_coeff = max(
-                0.0,
-                min(agent.lambda_max, agent.lambda_coeff + agent.lambda_lr * violation)
-            )
+            # Update EMA (exponential moving average)
+            if cost_ema == 0.0:
+                cost_ema = avg_rollout_cost
+            else:
+                cost_ema = 0.9 * cost_ema + 0.1 * avg_rollout_cost
 
-            # Push updated lambda to environment for NEXT rollout
-            env.lambda_coeff = agent.lambda_coeff
+            update_counter += len(rollout_costs)
+
+            # Update lambda every 10 episodes (using EMA)
+            if update_counter >= 10:
+                old_lambda = agent.lambda_coeff
+                violation = (cost_ema - agent.safety_budget) / agent.safety_budget  # Normalize!
+
+                # Dual ascent with clipping
+                agent.lambda_coeff = max(
+                    0.0,
+                    min(agent.lambda_max, agent.lambda_coeff + agent.lambda_lr * violation)
+                )
+
+                # Push updated lambda to environment for NEXT rollout
+                env.lambda_coeff = agent.lambda_coeff
+
+                # Debug print occasionally
+                if episode_idx % 50 == 0:
+                    print(f"  [Lambda Update] EMA Cost: {cost_ema:.2f}, Budget: {agent.safety_budget:.0f}, "
+                          f"Violation: {violation:.3f}, Lambda: {old_lambda:.4f} → {agent.lambda_coeff:.4f}")
+
+                update_counter = 0
 
             # Clear rollout costs
             rollout_costs = []
 
-            # Log lambda
+            # Log metrics
             writer.add_scalar("Lagrangian/Lambda", agent.lambda_coeff, timesteps)
             writer.add_scalar("Safety/RolloutAvgCost", avg_rollout_cost, timesteps)
+            writer.add_scalar("Safety/CostEMA", cost_ema, timesteps)
 
         # Print progress logging
         if len(episode_rewards) > 0:
@@ -474,7 +497,7 @@ def train_lagrangian(
                   f"Episodes: {episode_idx:4d} | "
                   f"Avg Reward: {avg_reward:7.2f} | "
                   f"Lambda: {agent.lambda_coeff:6.4f} | "
-                  f"AvgCost: {avg_rollout_cost if len(rollout_costs) == 0 else 0:.2f} | "
+                  f"Cost EMA: {cost_ema:5.2f} | "
                   f"Actor Loss: {stats['actor_loss']:7.4f} | "
                   f"Critic Loss: {stats['critic_loss']:7.4f} | "
                   f"Entropy: {stats['entropy']:6.3f}")
@@ -523,8 +546,7 @@ def evaluate_lagrangian(
     device="cpu"
 ):
     # Load checkpoint
-    # ckpt = torch.load(checkpoint_path, map_location=device)
-    ckpt = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+    ckpt = torch.load(checkpoint_path, map_location=device)
 
     # Create environment for evaluation (match training settings)
     env = MultiAgentGoalReachingEnv(
