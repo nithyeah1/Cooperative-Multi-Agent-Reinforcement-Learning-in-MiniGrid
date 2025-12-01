@@ -510,13 +510,13 @@ def train_lagrangian(
 
         # Save intermediate checkpoints
         if timesteps % 50_000 == 0 or timesteps >= total_timesteps:
-            ckpt_path = f"./checkpoints/lagrangian/model_{timesteps}.pt"
+            ckpt_path = f"./checkpoints/lagrangian/lagrangian_best_{timesteps}.pt"
             torch.save(
                 {
                     "actors": [a.state_dict() for a in agent.actors],
                     "critic": agent.critic.state_dict(),
-                    "lambda": agent.lambda_coeff,
-                    "timesteps": timesteps,
+                    "lambda": float(agent.lambda_coeff),  # Convert to pure Python float
+                    "timesteps": int(timesteps),          # Convert to pure Python int
                 },
                 ckpt_path
             )
@@ -525,7 +525,18 @@ def train_lagrangian(
     writer.close()
     env.close()
 
-    final_path = f"./checkpoints/lagrangian/model_{timesteps}.pt"
+    # Save final checkpoint with clear name
+    final_path = "./checkpoints/lagrangian/lagrangian_best_final.pt"
+    torch.save(
+        {
+            "actors": [a.state_dict() for a in agent.actors],
+            "critic": agent.critic.state_dict(),
+            "lambda": float(agent.lambda_coeff),
+            "timesteps": int(timesteps),
+        },
+        final_path
+    )
+
     print("\n=========== TRAINING COMPLETE ===========")
     print(f"Final timesteps: {timesteps}")
     print(f"Final checkpoint: {final_path}")
@@ -545,8 +556,8 @@ def evaluate_lagrangian(
     max_steps=100,
     device="cpu"
 ):
-    # Load checkpoint
-    ckpt = torch.load(checkpoint_path, map_location=device)
+    # Load checkpoint (weights_only=False is safe for our own checkpoints)
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     # Create environment for evaluation (match training settings)
     env = MultiAgentGoalReachingEnv(
@@ -649,7 +660,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Lagrangian MAPPO Training + Evaluation")
     parser.add_argument("--mode", type=str, default="train", choices=["train", "eval"])
     parser.add_argument("--timesteps", type=int, default=300_000, help="total training timesteps")
-    parser.add_argument("--checkpoint", type=str, default="./checkpoints/lagrangian/model_300000.pt")
+    parser.add_argument("--checkpoint", type=str, default="./checkpoints/lagrangian/lagrangian_best_final.pt")
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--device", type=str, default="cpu")
 
