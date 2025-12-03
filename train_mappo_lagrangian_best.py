@@ -145,10 +145,10 @@ class MAPPO_Lagrangian:
         max_grad_norm=0.5,
         ppo_epochs=4,
         device="cpu",
-        safety_budget=3.0,
-        lambda_lr=0.02,
+        safety_budget=15.0, 
+        lambda_lr=0.001,     
         lambda_init=0.0,
-        lambda_max=1.0,
+        lambda_max=0.1,      
     ):
         self.n_agents = n_agents
         self.gamma = gamma
