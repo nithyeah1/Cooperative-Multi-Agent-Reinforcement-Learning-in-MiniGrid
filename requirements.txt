@@ -10,3 +10,16 @@ gymnasium
 tensorboard
 numpy
 matplotlib
+
+#RLlib dependencies (for MAPPO)
+ray[rllib]
+dm-tree
+lz4
+scikit-image
+
+#cleanrl mappo
+
+# cleanrl # optional reference for MAPPO architecture
+# torchsummary # optional for model summaries
+# tqdm # progress bars
+# tensorboardX # better TensorBoard writer support (optional)
