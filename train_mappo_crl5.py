@@ -119,11 +119,11 @@ class MAPPO:
         lr=3e-4,
         gamma=0.99,
         gae_lambda=0.95,
-        clip_eps=0.2,
-        entropy_coef=0.01,
+        clip_eps=0.1,
+        entropy_coef=0.05,
         value_coef=0.5,
         max_grad_norm=0.5,
-        ppo_epochs=4,
+        ppo_epochs=10,
         device='cpu'
     ):
         self.n_agents = n_agents
