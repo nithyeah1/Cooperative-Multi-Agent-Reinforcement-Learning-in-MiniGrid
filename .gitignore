@@ -1,0 +1,58 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# PyTorch/ML model files (optional - uncomment if you don't want to track large models)
+# *.pt
+# *.pth
+# *.ckpt
+# *.zip
+
+# TensorBoard logs (optional - uncomment if too large)
+# tensorboard/
+
+# Checkpoints (optional - uncomment if too large)
+# checkpoints/
+
+# Generated plots
+# *.png
+# *.pdf
+
+# LaTeX auxiliary files
+*.aux
+*.log
+*.out
+*.toc
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.bbl
+*.blg
+
+# Temporary files
+*.tmp
+*.bak
