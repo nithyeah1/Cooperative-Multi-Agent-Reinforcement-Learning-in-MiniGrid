@@ -8,7 +8,7 @@ This project demonstrates safe multi-agent reinforcement learning where 2 agents
 
 ---
 
-## 🚀 Quick Setup
+## Quick Setup
 
 ```bash
 # Create conda environment
@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 ---
 
-## 📂 Project Structure (Key Files)
+## Project Structure (Key Files)
 
 ### Core Environment
 - **`multiagent_minigrid_env.py`** - Basic multi-agent MiniGrid environment (2 agents, 2 goals, coordination reward)
@@ -39,13 +39,9 @@ pip install -r requirements.txt
 - **`visualize_mappo_crl6_2b_saflag.py`** - Visualize trained Lagrangian MAPPO policies (renders episodes)
 - **`visualize_mappo.py`** - Visualize baseline MAPPO policies
 
-### Report & Analysis
-- **`project_report.tex`** - Complete LaTeX report (compile with `pdflatex`)
-- **`generate_plots_simple.py`** - Generate publication-quality training curve plots
-
 ---
 
-## 🎮 Environment Details
+## Environment Details
 
 **MultiAgentGoalReachingEnv (Safety Version):**
 - **Grid:** 8×8 with walls around perimeter (36 traversable cells)
@@ -67,9 +63,9 @@ pip install -r requirements.txt
 
 ---
 
-## 🏃 How to Run (Important Files)
+## How to Run
 
-### 1️⃣ Test the Environment (No Training)
+### 1) Test the Environment (No Training)
 
 **Test basic multi-agent environment:**
 ```bash
@@ -85,7 +81,7 @@ python multiagent_minigrid_env_safety_2b_saflag.py
 
 ---
 
-### 2️⃣ Train IPPO (Baseline - Poor Coordination)
+### 2) Train IPPO (Baseline - Poor Coordination)
 
 ```bash
 python train_ippo.py --mode train --timesteps 500000
@@ -105,7 +101,7 @@ python train_ippo.py --mode eval --episodes 50
 
 ---
 
-### 3️⃣ Train Baseline MAPPO (Better Coordination, No Safety)
+### 3) Train Baseline MAPPO (Better Coordination, No Safety)
 
 **File:** `train_mappo_safety_fixed.py` (called CRL5 internally)
 
@@ -127,7 +123,7 @@ python train_mappo_safety_fixed.py --mode eval --episodes 20
 
 ---
 
-### 4️⃣ Train Lagrangian MAPPO (Best - Adaptive Safety) ⭐
+### 4) Train Lagrangian MAPPO (Best - Adaptive Safety) ⭐
 
 **File:** `train_mappo_lagrangian_best.py`
 
@@ -158,11 +154,11 @@ Average Cost:   12.4 ± 5.1  (within budget!)
 Success Rate:   65.0%
 ```
 
-**Best results!** 🎉
+**Best results!**
 
 ---
 
-### 5️⃣ Visualize Trained Policies (Watch Agents Navigate)
+### 5) Visualize Trained Policies (Watch Agents Navigate)
 
 **Visualize Lagrangian MAPPO:**
 ```bash
@@ -185,7 +181,7 @@ python visualize_mappo.py
 
 ---
 
-### 6️⃣ Monitor Training with TensorBoard
+### 6) Monitor Training with TensorBoard
 
 **For Lagrangian MAPPO:**
 ```bash
@@ -213,25 +209,7 @@ tensorboard --logdir ./tensorboard/ippo/
 
 ---
 
-## 📊 Generate Report Plots
-
-Create publication-quality training curves for LaTeX report:
-
-```bash
-python generate_plots_simple.py
-```
-
-**Generates:**
-- `figure1_reward_comparison.png/pdf` - Reward over training (MAPPO vs Lagrangian)
-- `figure2_safety_cost.png/pdf` - Safety cost convergence
-- `figure3_lambda_evolution.png/pdf` - Adaptive penalty evolution
-- `figure4_success_rate.png/pdf` - Success rate comparison
-
-**Uses:** TensorBoard logs (or generates synthetic data if logs missing)
-
----
-
-## 📈 Expected Results Summary
+## Expected Results Summary
 
 | Method | Success Rate | Avg Reward | Avg Cost | Notes |
 |--------|--------------|------------|----------|-------|
@@ -245,7 +223,7 @@ python generate_plots_simple.py
 
 ---
 
-## 🧪 Algorithms Implemented
+## Algorithms Implemented
 
 ### 1. Independent PPO (IPPO)
 - Each agent trains separately
@@ -275,7 +253,7 @@ python generate_plots_simple.py
 
 ---
 
-## 🔧 Key Hyperparameters
+## Key Hyperparameters
 
 **PPO (all methods):**
 - Learning rate: 3×10⁻⁴
@@ -295,26 +273,8 @@ python generate_plots_simple.py
 
 ---
 
-## 📝 Generate LaTeX Report
 
-Compile the complete project report:
-
-```bash
-pdflatex project_report.tex
-pdflatex project_report.tex  # Run twice for references
-open project_report.pdf
-```
-
-**Report includes:**
-- Complete methodology
-- Mathematical formulations
-- Results tables and plots
-- Ablation studies
-- 11 citations
-
----
-
-## 🎯 Customization
+## Customization
 
 ### Modify Safety Budget
 Edit `train_mappo_lagrangian_best.py`:
@@ -345,7 +305,7 @@ python train_mappo_lagrangian_best.py --mode train --timesteps 300000 --grid-siz
 
 ---
 
-## 📁 Output Files After Training
+## Output Files After Training
 
 **Checkpoints:**
 - `./checkpoints/ippo/agent_X/` - IPPO models
@@ -368,7 +328,7 @@ python train_mappo_lagrangian_best.py --mode train --timesteps 300000 --grid-siz
 
 ---
 
-## 🚨 Troubleshooting
+## Troubleshooting
 
 ### Import errors
 ```bash
@@ -395,7 +355,7 @@ python visualize_mappo_crl6_2b_saflag.py
 
 ---
 
-## 📚 References
+## References
 
 Key papers implemented:
 - **MAPPO:** Yu et al. "The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games" (NeurIPS 2021)
@@ -404,21 +364,7 @@ Key papers implemented:
 
 ---
 
-## 🎓 Project Report
-
-See `project_report.tex` for the complete academic write-up including:
-- Abstract, Motivation, Related Work
-- Problem Formulation (Constrained Markov Games)
-- Methods (all 5 approaches)
-- Experiments and Results
-- Ablation Studies
-- Conclusion and Future Work
-
-**Compile:** `pdflatex project_report.tex`
-
----
-
-## 🏆 Key Takeaways
+## Key Takeaways
 
 1. **MAPPO > IPPO** for coordination (58% vs 35% success)
 2. **Adaptive penalties > Fixed penalties** (65% vs 42% success)
@@ -430,9 +376,8 @@ See `project_report.tex` for the complete academic write-up including:
 
 ---
 
-## 🤝 Contributing
+## Future Scope
 
-This is a final project for safe multi-agent reinforcement learning research. Feel free to:
 - Extend to more agents (n > 2)
 - Add partial observability
 - Implement continuous actions
@@ -440,12 +385,4 @@ This is a final project for safe multi-agent reinforcement learning research. Fe
 
 ---
 
-## 📧 Contact
 
-For questions about the implementation or report, see the code comments in:
-- `train_mappo_lagrangian_best.py` (best method)
-- `multiagent_minigrid_env_safety_2b_saflag.py` (environment)
-
----
-
-**Happy Safe Multi-Agent RL! 🚀🤖🛡️**
